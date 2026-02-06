@@ -7,7 +7,7 @@
 
 #define F_CPU 16000000UL 
 
-#include <avr/io.h>       // Mapeamento dos registradores de Hardware
+#include <avr/io.h>       // Mapeamento dos registradores 
 #include <avr/interrupt.h> // Vetores de interrupção
 #include <util/delay.h>    // Funções de atraso
 #include <string.h>        // Manipulação de strings
@@ -25,7 +25,6 @@
 
 
 // Variáveis Globais
-volatile bool flag_botao = false;
 
 volatile uint8_t pausa_botao = 0; // Contador para Debounce
 char senha_entrada[5];            // Senha de entrada 
@@ -49,17 +48,34 @@ const char teclado[4][3] = {
 char digitar_senha();
 void limpar_entrada();
 void controlar_LEDS(bool led_vermelho, bool led_verde);
-void controlar_servo (bool ctrl);
+void controlar_servo(bool ctrl);
 
 
 
 // ISR para Interrupção Externa 0 (Botão)
 ISR(INT0_vect) {
-    if(pausa_botao == 0) {
-        flag_botao = true; //
-        pausa_botao = 2;   // Inicia debounce
-    }
+    if(pausa_botao == 0) pausa_botao = 2;   // Inicia debounce
+	     //Lógica de estado do cofre
+	switch (estado_Cofre) 
+	{
+		case Fechado: // Fechado -> Digitando
+			estado_Cofre = Digitando_Senha;
+			limpar_entrada();
+			controlar_LEDS(false, false); // Apaga LEDs para indicar que pode digitar senha
+			break;
+		
+		case Aberto: // Aberto -> Fechado (Trancamento Manual)
+			estado_Cofre = Fechado;
+			controlar_servo(false);
+			limpar_entrada();
+			controlar_servo(true);  // Fecha o cofre
+			controlar_LEDS(true, false); // Acende o LED vermelho
+			break;
+		        
+		default: break;
+	}
 }
+
 
 // ISR para Timer 1 
 ISR(TIMER1_COMPA_vect) {
@@ -74,11 +90,11 @@ int main(void) {
 	DDRB |= (1 << LED_VERMELHO) | (1 << LED_VERDE);
 	
 	// Configuração de GPIO para o Teclado
-	// Linhas (PB0-PB3): Configuradas como SAÍDA para varredura
-	DDRB |= 0x0F; // Linhas SAÍDA
+	// Linhas (PB0-PB3)
+	DDRB |= 0x0F; // Linhas (saídas)
 	PORTB |= 0x0F;
-	// Colunas (PD4-PD6): Configuradas como ENTRADA para leitura
-	DDRD &= 0x8F; // Colunas ENTRADA
+	// Colunas (PD4-PD6)
+	DDRD &= 0x8F; // Colunas (entradas)
 	// Registrador PORT em modo de Entrada: Ativa resistores de PULL-UP internos
 	PORTD |= 0x70; // Pull-up ATIVO
 	
@@ -96,7 +112,7 @@ int main(void) {
 	// Neste modo, o contador conta de 0 a 255 (0xFF) e reinicia.
 	TCCR2A |= (1 << COM2B1) | (1 << WGM21) | (1 << WGM20);
 	// Configura o registrador de controle B (TCCR2B)
-	// F_PWM = 16.000.000 / (1024 * 256) ≈ 61 Hz.
+	// F_PWM = 16.000.000 / (1024 * 256) = 61 Hz.
 	TCCR2B |= (1 << CS22) | (1 << CS21) | (1 << CS20);  // Configura Timer 2 para Fast PWM.
 	controlar_servo(true); // Define Duty Cycle inicial para a posição de trancamento.
 	
@@ -110,7 +126,7 @@ int main(void) {
 	// Frequência do Timer = F_CPU / 64 = 16MHz / 64 = 250kHz.
 	TCCR1B |= (1 << WGM12) | (1 << CS11) | (1 << CS10);
 	// Define o valor de comparação para gerar a interrupção.
-	// (250.000 Hz / 4 Hz desejados) - 1 = 62499.
+	// (250.000 Hz / 4 Hz) - 1 = 62499.
 	// Isso gera uma interrupção a cada 250ms (4 vezes por segundo).
 	OCR1A = 62499;
 	// Habilita a interrupção "Output Compare A Match" (OCIE1A).
@@ -120,29 +136,8 @@ int main(void) {
 	controlar_LEDS(true, false);
 	sei(); // Habilita Interrupções Globais
 	
-	while (1) {
-		// Verifica ISR do botão (INT0)
-		if (flag_botao) {
-			flag_botao = false; // Limpa a flag para processar apenas uma vez
-			//Lógica de estado dos cofres
-			switch (estado_Cofre) {
-				case Fechado: // Fechado -> Digitando
-				estado_Cofre = Digitando_Senha;
-				limpar_entrada();
-				controlar_LEDS(false, false); // Apaga LEDs para indicar que pode digitar senha
-				break;
-				
-				case Aberto: // Aberto -> Fechado (Trancamento Manual)
-				estado_Cofre = Fechado;
-				limpar_entrada();
-				controlar_servo(true);  // Fecha o cofre
-				controlar_LEDS(true, false); // Acende o LED vermelho
-				break;
-				
-				default: break;
-			}
-		}
-
+	while (1)
+	{
 		// Digitação
 		// Apenas processa o teclado se estiver no estado correto
 		if (estado_Cofre == Digitando_Senha) {
@@ -152,7 +147,7 @@ int main(void) {
 			{
 				if (i < 4) {
 					senha_entrada[i++] = tecla; // Armazena no buffer
-					senha_entrada[i] = '\0';// Mantém string 
+					//senha_entrada[i] = '\0';
 					// Pisca LED verde pra indicar digitação
 					controlar_LEDS(false, true);
 					_delay_ms(100);
@@ -160,15 +155,15 @@ int main(void) {
 				}
 				
 				// Verificação da senha
-				if (i == 4) 
+				if (i == 4)
 				{
 					// Senha Correta: Abre o cofre
 					if (strcmp(senha_entrada, SENHA) == 0) {
 						estado_Cofre = Aberto;
-						controlar_servo(true); // Abre a porta do cofre (servo motor)
+						controlar_servo(false); // Abre a porta do cofre (servo motor)
 						controlar_LEDS(false, true); // Acende LED verde
-						} 
-					else 
+					}
+					else
 					{
 						// Senha Incorreta: Mantém fechado
 						estado_Cofre = Fechado; // Fecha a porta do cofre (servo motor)
@@ -179,7 +174,9 @@ int main(void) {
 				}
 			}
 		}
+
 	}
+			
 }
 
 
@@ -204,7 +201,7 @@ void controlar_LEDS(bool led_vermelho, bool led_verde) {
 // Reseta o buffer de senha e o índice para o estado inicial
 void limpar_entrada() {
 	i = 0; // Reseta o contador de caracteres digitados
-	for (uint8_t k=0; k<6; k++)
+	for (uint8_t k=0; k<5; k++)
 		senha_entrada[k] = '\0';
 }
 
@@ -213,7 +210,7 @@ char digitar_senha() {
 	// Itera sobre as 4 linhas do teclado (conectadas em PB0 a PB3)
 	for (uint8_t linha = 0; linha < 4; linha++) {
 		
-		// Ativa a linha atual colocando-a em Nível BAIXO
+		// Ativa a linha atual em Nível BAIXO
 		PORTB &= ~(1 << linha);
 		
 		// Pequeno atraso para debounce
@@ -222,7 +219,7 @@ char digitar_senha() {
 		char key = 0;
 		
 		// Leitura das Colunas (PD4, PD5, PD6)
-		// A lógica é inversa: se o bit for 0, significa que o botão foi pressionado
+		// Se o bit for 0, significa que o botão foi pressionado
 		if (!(PIND & (1 << PD4)))      key = teclado[linha][0]; // Coluna 1 pressionada
 		else if (!(PIND & (1 << PD5))) key = teclado[linha][1]; // Coluna 2 pressionada
 		else if (!(PIND & (1 << PD6))) key = teclado[linha][2]; // Coluna 3 pressionada
@@ -245,10 +242,8 @@ char digitar_senha() {
 }
 
 // Define o estado do servo motor
-void controlar_servo(bool ctrl) 
+void controlar_servo (bool ctrl) 
 {
-	if(ctrl)
-		OCR2B = 15; // Aberto 
-	else
-		OCR2B = 24; // Fechado
+	if (ctrl) OCR2B = 24; // Aberto 
+	else OCR2B = 15; // Fechado
 }
