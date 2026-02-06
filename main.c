@@ -22,9 +22,7 @@
 #define LED_VERMELHO PB4  
 #define SERVO    PD3  
 
-// Macros de Controle do Servo 
-#define SERVO_OPEN() (OCR2B = 15) // 0 graus 
-#define SERVO_LOCK() (OCR2B = 24) // 
+
 
 // Variáveis Globais
 volatile bool flag_botao = false;
@@ -51,6 +49,7 @@ const char teclado[4][3] = {
 char digitar_senha();
 void limpar_entrada();
 void controlar_LEDS(bool led_vermelho, bool led_verde);
+void controlar_servo (bool ctrl);
 
 
 
@@ -99,7 +98,7 @@ int main(void) {
 	// Configura o registrador de controle B (TCCR2B)
 	// F_PWM = 16.000.000 / (1024 * 256) ≈ 61 Hz.
 	TCCR2B |= (1 << CS22) | (1 << CS21) | (1 << CS20);  // Configura Timer 2 para Fast PWM.
-	SERVO_LOCK(); // Define Duty Cycle inicial para a posição de trancamento.
+	controlar_servo(true); // Define Duty Cycle inicial para a posição de trancamento.
 	
 	// Configuração da Interrupção Externa (INT0)
 	// Configura disparo na BORDA DE DESCIDA
@@ -136,7 +135,7 @@ int main(void) {
 				case Aberto: // Aberto -> Fechado (Trancamento Manual)
 				estado_Cofre = Fechado;
 				limpar_entrada();
-				SERVO_LOCK();  // Fecha o cofre
+				controlar_servo(true);  // Fecha o cofre
 				controlar_LEDS(true, false); // Acende o LED vermelho
 				break;
 				
@@ -166,14 +165,14 @@ int main(void) {
 					// Senha Correta: Abre o cofre
 					if (strcmp(senha_entrada, SENHA) == 0) {
 						estado_Cofre = Aberto;
-						SERVO_OPEN(); // Abre a porta do cofre (servo motor)
+						controlar_servo(true); // Abre a porta do cofre (servo motor)
 						controlar_LEDS(false, true); // Acende LED verde
 						} 
 					else 
 					{
 						// Senha Incorreta: Mantém fechado
 						estado_Cofre = Fechado; // Fecha a porta do cofre (servo motor)
-						SERVO_LOCK(); // Acende o LED vermelho
+						controlar_servo(true); // Acende o LED vermelho
 						controlar_LEDS(true, false);
 					}
 					limpar_entrada(); // Reseta buffer para próxima tentativa
@@ -243,4 +242,13 @@ char digitar_senha() {
 	}
 	
 	return 0; // Retorna 0 se nenhuma tecla foi detectada
+}
+
+// Define o estado do servo motor
+void controlar_servo(bool ctrl) 
+{
+	if(ctrl)
+		OCR2B = 15; // Aberto 
+	else
+		OCR2B = 24; // Fechado
 }
